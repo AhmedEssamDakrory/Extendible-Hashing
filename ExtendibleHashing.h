@@ -1,7 +1,7 @@
 #include "Bucket.h"
-#include"File.h"
-#include<math.h>
-#include<vector>
+#include "File.h"
+#include <math.h>
+#include <vector>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -12,7 +12,6 @@ using namespace std;
 
 class ExtendibleHashing{
     int fd, directory_fd;
-    int globalDepth;
 
     //utility functions
     
@@ -21,13 +20,17 @@ class ExtendibleHashing{
     }
     void deleteOffset(int offset);
     int putIfBucketNotFull(const DataItem& dataItem, int offset);
-    void splitBucket(int idx, const DataItem& dataItem);
-    void doubleDirectory();
+    void splitBucket(int, Bucket);
+    int createNewBucket();
+    int doubleDirectory();
     void collisionDetected();
     
+    int hashFn(int);
+    int getGlobalDepth();
+
     public:
 
     ExtendibleHashing(int fd, int intdirectory_fd);
-    void insert(const DataItem& dataItem);
+    int insert(const DataItem& dataItem);
     
 };
