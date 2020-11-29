@@ -48,7 +48,7 @@ void ExtendibleHashing :: splitBucket(int idx, const DataItem& dataItem){
     int localDepth;
     int offset = getOffset(idx);
     int globalDepth = log2(File::getFileSize(this->directory_fd)/sizeof(int));
-    ssize_t result = pread(this->fd, &localDepth, sizeof(int), offset+2*sizeof(Bucket));
+    ssize_t result = pread(this->fd, &localDepth, sizeof(int), offset+2*sizeof(int));
     if(localDepth == globalDepth){
         this->doubleDirectory();
     }
