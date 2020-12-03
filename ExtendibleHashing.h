@@ -28,9 +28,12 @@ class ExtendibleHashing{
     int hashFn(int);
     int getGlobalDepth();
 
+    void intializeFiles();
+
     public:
 
     ExtendibleHashing(int fd, int intdirectory_fd);
     int insert(const DataItem& dataItem);
+    void printDB();
     
 };

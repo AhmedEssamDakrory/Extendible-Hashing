@@ -39,7 +39,7 @@ public:
             if (result == -1) {
                 close(fd);
                 perror("Error calling lseek() to 'stretch' the file");
-                return 1;
+                return -1;
             }
 
             /* write just one byte at the end */

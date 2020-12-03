@@ -1,8 +1,15 @@
 #include<iostream>
-#include "File.h"
+#include "ExtendibleHashing.h"
 using namespace std;
+
 int main(){
-    int fd = File::createFile(200, "dd.txt");
-    File::extendFile(fd, 400);
-    cout<<File::getFileSize(fd)<<endl;
+    int fd = File::createFile(1, "fd.db");
+    int dir_fd = File::createFile(1, "dir.db");
+    ExtendibleHashing eh(fd, dir_fd);
+    DataItem dataItem;
+    dataItem.data = 213;
+    dataItem.key = 3;
+    dataItem.valid = 1;
+    eh.insert(dataItem);
+    eh.printDB();
 }

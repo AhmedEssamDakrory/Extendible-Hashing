@@ -1,10 +1,34 @@
 #include "ExtendibleHashing.h"
-
-
+#include <iostream>
+using namespace std;
 
 ExtendibleHashing :: ExtendibleHashing(int fd, int directory_fd){
     this->fd = fd;
     this->directory_fd = directory_fd;
+    
+    int gd = getGlobalDepth();
+    cout << gd << endl;
+    if(gd==0){
+        intializeFiles();
+    }
+    printDB();
+}
+
+void ExtendibleHashing::intializeFiles() {
+    
+    // create a bucket and save to db file
+    int bAddr = createNewBucket();
+    cout << bAddr << endl;
+    File::extendFile(this->directory_fd, sizeof(int)*2);
+
+    // pointing the new directories to the old buckets..
+    for(int i=0; i<2; i++){
+        ssize_t r = pwrite(directory_fd, &bAddr, sizeof(int), i*sizeof(int));
+        if(r <= 0){
+            perror("Error with pwrite");
+            return;
+        }
+    }
 }
 
 int ExtendibleHashing::hashFn(int key) {
@@ -38,6 +62,20 @@ int ExtendibleHashing::createNewBucket() {
     int mainFileSize = File::getFileSize(this->fd);
     File::extendFile(this->fd, mainFileSize+sizeof(Bucket));
     int newBucketAddr = mainFileSize;
+    
+    Bucket b;
+    b.localDepth = 1;
+    for(int i=0; i<ITEMS_PER_BUCKET; i++) {
+        DataItem d;
+        d.valid = 0;
+        d.data = 0;
+        d.key = 0;
+
+        b.data[i] = d;
+    }
+
+    ssize_t r = pwrite(fd, &b, sizeof(Bucket), newBucketAddr);
+
     return newBucketAddr;
 }
 
@@ -54,7 +92,7 @@ int ExtendibleHashing :: doubleDirectory(){
             perror("Error with pread");
             return -1;
         }
-        ssize_t r = pwrite(this->directory_fd, &addr, sizeof(int), offset);
+        r = pwrite(this->directory_fd, &addr, sizeof(int), offset);
         if(r <= 0){
             perror("Error with pwrite");
             return -1;
@@ -92,7 +130,7 @@ void ExtendibleHashing :: splitBucket(int dir, Bucket b){
     int newBucketAddr = createNewBucket();
 
     // edit the directory to make it point to the new bucket
-    ssize_t r = pwrite(this->directory_fd, &newBucketAddr, sizeof(int), dir*sizeof(int));
+    r = pwrite(this->directory_fd, &newBucketAddr, sizeof(int), dir*sizeof(int));
 
     int j=0; int k=0; // counters for new buckets
 
@@ -114,14 +152,16 @@ void ExtendibleHashing :: splitBucket(int dir, Bucket b){
     }
 
     // write buckets to their address
-    ssize_t r = pwrite(this->fd, &new_b1, sizeof(Bucket), oldBucketAddr);
-    ssize_t r = pwrite(this->fd, &new_b2, sizeof(Bucket), newBucketAddr);
+    r = pwrite(this->fd, &new_b1, sizeof(Bucket), oldBucketAddr);
+    r = pwrite(this->fd, &new_b2, sizeof(Bucket), newBucketAddr);
 
 }
 
 
 int ExtendibleHashing::getGlobalDepth() {
-    return log2(File::getFileSize(this->directory_fd)/sizeof(int));
+    int fileSize = File::getFileSize(this->directory_fd);
+    if(fileSize<sizeof(int)) return 0;
+    return log2(fileSize/sizeof(int));
 }
  
 int ExtendibleHashing :: insert(const DataItem& dataItem){
@@ -130,13 +170,13 @@ int ExtendibleHashing :: insert(const DataItem& dataItem){
     int h = hashFn(dataItem.key);
     int mask = pow(2, globalDepth) - 1;
     int dir = h & mask;
-
+    // cout << "Here\n";
     int bucketAddr;
     ssize_t r = pread(this->directory_fd, &bucketAddr, sizeof(int), dir);
-
+    // cout <<"here1\n";
     Bucket b;
-    ssize_t r = pread(this->fd, &b, sizeof(Bucket), bucketAddr);
-
+    r = pread(this->fd, &b, sizeof(Bucket), bucketAddr);
+    // cout << "here2\n";
     for(int i = 0; i < ITEMS_PER_BUCKET; i++){
         DataItem* d = &b.data[i];
         if(d->valid == 0) {
@@ -148,10 +188,10 @@ int ExtendibleHashing :: insert(const DataItem& dataItem){
                 perror("Error with pwrite");
                 return -1;
             }
-            return;
+            return 0;
         }    
     }
-
+    // cout <<"Here3\n";
     // if reached here, means there's no space in the bucket, so we need to split this bucket.
     
     // if the local depth of the bucket == global depth so we need to double the directory size first.
@@ -165,4 +205,22 @@ int ExtendibleHashing :: insert(const DataItem& dataItem){
     // split the bucket and insert the item in the new expanded db
     splitBucket(dir, b);
     insert(dataItem);
+}
+
+void ExtendibleHashing::printDB() {
+    int globalDepth = getGlobalDepth();
+    cout << "Printing the Database.....\nGlobal Depth = " << globalDepth << endl;
+
+    int bucketAddr = 0;
+    Bucket b;
+    for(int i=0; i<pow(2,globalDepth); i++){
+        ssize_t r = pread(this->directory_fd, &bucketAddr, sizeof(int), i*sizeof(int));
+        r = pread(fd, &b, sizeof(Bucket), bucketAddr);
+        cout << "Directory " << i << ": " << bucketAddr << "\nLocal Depth = " << b.localDepth << endl;
+        for(int j=0; j<ITEMS_PER_BUCKET; j++){
+            if(b.data[j].valid==1) {
+                cout << "Slot " << j << ", key = " << b.data[j].key << ", value = " << b.data[j].data << endl;
+            }
+        }
+    }
 }
