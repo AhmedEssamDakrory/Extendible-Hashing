@@ -19,7 +19,7 @@ void ExtendibleHashing::intializeFiles() {
     // create a bucket and save to db file
     int bAddr = createNewBucket();
     cout << bAddr << endl;
-    File::extendFile(this->directory_fd, sizeof(int)*2);
+    File::changeSize(this->directory_fd, sizeof(int)*2);
 
     // pointing the new directories to the old buckets..
     for(int i=0; i<2; i++){
@@ -36,12 +36,17 @@ int ExtendibleHashing::hashFn(int key) {
 }
 
 
-void ExtendibleHashing :: deleteOffset(int offset){
+bool ExtendibleHashing :: deleteOffset(int offset){
     DataItem dummy;
     dummy.data = 0;
     dummy.key = -1;
     dummy.valid = 0;
     ssize_t result = pwrite(this->fd, &dummy, sizeof(DataItem), offset);
+    if(result < 0){
+        perror("Error while writing!");
+        return false;
+    }
+    return true;
 } 
 
 int ExtendibleHashing :: putIfBucketNotFull(const DataItem& dataItem, int offset){
@@ -60,7 +65,7 @@ int ExtendibleHashing :: putIfBucketNotFull(const DataItem& dataItem, int offset
 
 int ExtendibleHashing::createNewBucket() {
     int mainFileSize = File::getFileSize(this->fd);
-    File::extendFile(this->fd, mainFileSize+sizeof(Bucket));
+    File::changeSize(this->fd, mainFileSize+sizeof(Bucket));
     int newBucketAddr = mainFileSize;
     
     Bucket b;
@@ -82,7 +87,7 @@ int ExtendibleHashing::createNewBucket() {
 int ExtendibleHashing :: doubleDirectory(){
     // doubling directory....
     int currentSize = File::getFileSize(this->directory_fd);
-    File::extendFile(this->directory_fd, currentSize*2);
+    File::changeSize(this->directory_fd, currentSize*2);
     
     // pointing the new directories to the old buckets..
     for(int offset = currentSize; offset < currentSize*2; offset += sizeof(int)){
@@ -207,38 +212,100 @@ int ExtendibleHashing :: insert(const DataItem& dataItem){
     insert(dataItem);
 }
 
-bool ExtendibleHashing::search(const DataItem& dataItem){
-	bool result = false;
+int ExtendibleHashing::search(const DataItem& dataItem){
+	int offset = -1;
 	int globalDepth = getGlobalDepth();
 
 	int h = hashFn(dataItem.key);
 	int mask = pow(2, globalDepth) - 1;
 	int dir = h & mask;
 	int bucketAddr;
-	ssize_t r = pread(this->directory_fd, &bucketAddr, sizeof(int), dir);
+	ssize_t r = pread(this->directory_fd, &bucketAddr, sizeof(int), dir*sizeof(int));
 	Bucket b;
 	r = pread(this->fd, &b, sizeof(Bucket), bucketAddr);
 	for(int i = 0; i < ITEMS_PER_BUCKET; i++){
 	     DataItem* d = &b.data[i];
 	     if(d->valid == 1 && d->data == dataItem.data) {
-	         result = true;
+	         offset = bucketAddr+i*sizeof(DataItem);
 	         break;
 	     }
 	 }
 
-	return result;
+	return offset;
+}
+
+bool ExtendibleHashing :: canMerge(const Bucket& b1, const Bucket& b2){
+    int cnt1 = 0, cnt2 = 0;
+    bool ok = true;
+    for(int i = 0; i < ITEMS_PER_BUCKET; ++i){
+        if(b1.data[i].valid) ++cnt1;
+        if(b2.data[i].valid) ++cnt2;
+    }
+    return (cnt1+cnt2 <= ITEMS_PER_BUCKET) ? true : false;
+}
+
+Bucket ExtendibleHashing :: merge(const Bucket& b1, const Bucket& b2){
+    Bucket b;
+    int idx = 0;
+    for(int i = 0; i < ITEMS_PER_BUCKET; ++i){
+        if(b1.data[i].valid) b.data[idx++] = b1.data[i];
+        if(b2.data[i].valid) b.data[idx++] = b2.data[i];
+    }
+    b.localDepth = b1.localDepth-1;
+    return b;
+}
+
+void ExtendibleHashing :: shrinkAndCompineAdresses(int bucketAddr, int siblingBucketAddr){
+    int fileSize = File::getFileSize(this->fd);
+    int directorySize = File::getFileSize(this->directory_fd);
+    Bucket b;
+    int lastAddress = fileSize - sizeof(Bucket);
+    ssize_t result = pread(this->fd, &b, sizeof(Bucket), lastAddress);
+    result = pwrite(this->fd, &b, sizeof(Bucket), siblingBucketAddr);
+    File::changeSize(this->fd, fileSize-sizeof(Bucket));
+    // change Addresses
+    for(int i = 0 ; i*sizeof(int) < directorySize; ++i){
+        int address;
+        result = pread(this->directory_fd, &address, sizeof(int), i*sizeof(int));
+        if(address == lastAddress){
+            result = pwrite(this->directory_fd, &siblingBucketAddr, sizeof(int), i*sizeof(int));
+        }
+        if(address == siblingBucketAddr){
+            result = pwrite(this->directory_fd, &bucketAddr, sizeof(int), i*sizeof(int));
+        }
+    }
 }
 
 bool ExtendibleHashing::deleteItem(const DataItem& dataItem){
-	bool result = false;
-
-	bool itemExist = search(dataItem);
-	if(itemExist){
-
-	}
-
-
-	return result;
+    int globalDepth = this->getGlobalDepth();
+    int offset = this->search(dataItem);
+    if(offset < 0) return false; // Key not found
+    // Delete offset.
+    bool f = this->deleteOffset(offset);
+    if(!f) return false; // Error while writing!
+    int h = hashFn(dataItem.key);
+    int mask = (1 << globalDepth) - 1;
+    int dir = h & mask;
+    int bucketAddr;
+    ssize_t result = pread(this->directory_fd, &bucketAddr, sizeof(int), dir*sizeof(int));
+    Bucket b, siblingBucket;
+    result = pread(this->fd, &b, sizeof(Bucket), bucketAddr);
+    do{
+        mask = (1 << b.localDepth)-1;
+        int label = mask & dir;
+        int siblingLabel =  (1 << (b.localDepth-1)) ^ label;
+        int siblingBucketAddr;
+        result = pread(this->directory_fd, &siblingBucketAddr, sizeof(int), siblingLabel*sizeof(int));
+        result = pread(this->fd, &siblingBucket, sizeof(Bucket), siblingBucketAddr);
+        if((siblingBucket.localDepth != b.localDepth) || !this->canMerge(b, siblingBucket)) break;
+        Bucket newBucket = this->merge(b, siblingBucket);
+        if(bucketAddr > siblingBucketAddr ) swap(bucketAddr, siblingBucketAddr);
+        result = pwrite(this->fd, &newBucket, sizeof(Bucket), bucketAddr);
+        // shrink ......
+        this->shrinkAndCompineAdresses(bucketAddr, siblingBucketAddr);
+        b = newBucket;
+    } while(1);
+    return true;
 }
 
 void ExtendibleHashing::printDB() {

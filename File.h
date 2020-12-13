@@ -61,7 +61,7 @@ public:
         return fd;
     }
 
-    static int extendFile(int fd, int size){
+    static int changeSize(int fd, int size){
         return ftruncate(fd, size);
     }
 
