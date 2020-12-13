@@ -7,8 +7,9 @@ ExtendibleHashing :: ExtendibleHashing(int fd, int directory_fd){
     this->directory_fd = directory_fd;
     
     int gd = getGlobalDepth();
-    cout << gd << endl;
+    cout << "Intiliazing Extendible Hashing\n";
     if(gd==0){
+        cout << "Files are Empty, Intializing DB.....\n";
         intializeFiles();
     }
     printDB();
@@ -16,23 +17,28 @@ ExtendibleHashing :: ExtendibleHashing(int fd, int directory_fd){
 
 void ExtendibleHashing::intializeFiles() {
     
-    // create a bucket and save to db file
-    int bAddr = createNewBucket();
-    cout << bAddr << endl;
+    // create two buckets and save them to db file
+    int b1Addr = createNewBucket();
+    int b2Addr = createNewBucket();
+    
     File::extendFile(this->directory_fd, sizeof(int)*2);
 
-    // pointing the new directories to the old buckets..
-    for(int i=0; i<2; i++){
-        ssize_t r = pwrite(directory_fd, &bAddr, sizeof(int), i*sizeof(int));
-        if(r <= 0){
-            perror("Error with pwrite");
-            return;
-        }
+    // pointing the directories to the new buckets..
+    ssize_t r = pwrite(directory_fd, &b1Addr, sizeof(int), 0);
+    if(r <= 0){
+        perror("Error with pwrite");
+        return;
+    }
+    
+    r = pwrite(directory_fd, &b2Addr, sizeof(int), sizeof(int));
+    if(r <= 0){
+        perror("Error with pwrite");
+        return;
     }
 }
 
 int ExtendibleHashing::hashFn(int key) {
-    key % 13;
+    return key % 101;
 }
 
 
@@ -44,24 +50,17 @@ void ExtendibleHashing :: deleteOffset(int offset){
     ssize_t result = pwrite(this->fd, &dummy, sizeof(DataItem), offset);
 } 
 
-int ExtendibleHashing :: putIfBucketNotFull(const DataItem& dataItem, int offset){
-    ssize_t result;
-    int valid;
-    for(int i = 0; i < ITEMS_PER_BUCKET; ++i){
-        result = pread(fd, &valid, sizeof(int), offset+2*sizeof(int));
-        if(!valid){
-            result = pwrite(fd, &dataItem, sizeof(DataItem), offset);
-            return (result <= 0) ? ERROR : DONE;  
-        }
-        offset += sizeof(DataItem);
-    }
-    return FULL;
-}
-
 int ExtendibleHashing::createNewBucket() {
     int mainFileSize = File::getFileSize(this->fd);
-    File::extendFile(this->fd, mainFileSize+sizeof(Bucket));
-    int newBucketAddr = mainFileSize;
+    int newBucketAddr;
+    if(mainFileSize<sizeof(Bucket)) {
+        File::extendFile(this->fd, sizeof(Bucket));
+        newBucketAddr = 0;
+    }
+    else {
+        File::extendFile(this->fd, mainFileSize+sizeof(Bucket));
+        newBucketAddr = mainFileSize;
+    }
     
     Bucket b;
     b.localDepth = 1;
@@ -75,6 +74,10 @@ int ExtendibleHashing::createNewBucket() {
     }
 
     ssize_t r = pwrite(fd, &b, sizeof(Bucket), newBucketAddr);
+    if(r <= 0) {
+        perror("Error with pwrite");
+        return -1;
+    }
 
     return newBucketAddr;
 }
@@ -101,7 +104,7 @@ int ExtendibleHashing :: doubleDirectory(){
     return 0;
 }
 
-void ExtendibleHashing :: splitBucket(int dir, Bucket b){
+int ExtendibleHashing::splitBucket(int dir, Bucket b){
     int globalDepth = getGlobalDepth();
     int localDepth = b.localDepth;
 
@@ -120,17 +123,25 @@ void ExtendibleHashing :: splitBucket(int dir, Bucket b){
     // get the directories for the buckets
     int mask = pow(2, localDepth) - 1;
     int oldBucketDir = dir & mask;
-    int newBucketDir = dir | (1<<localDepth);
+    int newBucketDir = oldBucketDir | (1<<localDepth);
 
     // get the original bucket address
     int oldBucketAddr;
-    ssize_t r = pread(this->directory_fd, &oldBucketAddr, sizeof(int), dir*sizeof(int));
+    ssize_t r = pread(this->directory_fd, &oldBucketAddr, sizeof(int), oldBucketDir*sizeof(int));
+    if(r <= 0){
+        perror("Error with pread");
+        return -1;
+    }
 
     // expand the db and create a new bucket and return its address    
     int newBucketAddr = createNewBucket();
 
     // edit the directory to make it point to the new bucket
-    r = pwrite(this->directory_fd, &newBucketAddr, sizeof(int), dir*sizeof(int));
+    r = pwrite(this->directory_fd, &newBucketAddr, sizeof(int), newBucketDir*sizeof(int));
+    if(r <= 0) {
+        perror("Error with pwrite");
+        return -1;
+    }
 
     int j=0; int k=0; // counters for new buckets
 
@@ -153,32 +164,50 @@ void ExtendibleHashing :: splitBucket(int dir, Bucket b){
 
     // write buckets to their address
     r = pwrite(this->fd, &new_b1, sizeof(Bucket), oldBucketAddr);
+    if(r <= 0) {
+        perror("Error with pwrite");
+        return -1;
+    }
     r = pwrite(this->fd, &new_b2, sizeof(Bucket), newBucketAddr);
-
+    if(r <= 0) {
+        perror("Error with pwrite");
+        return -1;
+    }
+    return 0;
 }
 
 
 int ExtendibleHashing::getGlobalDepth() {
     int fileSize = File::getFileSize(this->directory_fd);
-    if(fileSize<sizeof(int)) return 0;
+    if(fileSize < sizeof(int)*2) return 0;
     return log2(fileSize/sizeof(int));
 }
  
 int ExtendibleHashing :: insert(const DataItem& dataItem){
+    int count = 0;
     int globalDepth = getGlobalDepth();
 
     int h = hashFn(dataItem.key);
     int mask = pow(2, globalDepth) - 1;
     int dir = h & mask;
-    // cout << "Here\n";
     int bucketAddr;
-    ssize_t r = pread(this->directory_fd, &bucketAddr, sizeof(int), dir);
-    // cout <<"here1\n";
+    
+    ssize_t r = pread(this->directory_fd, &bucketAddr, sizeof(int), sizeof(int)*dir);
+    if(r <= 0){
+        perror("Error with pread");
+        return -1;
+    }
+
     Bucket b;
     r = pread(this->fd, &b, sizeof(Bucket), bucketAddr);
-    // cout << "here2\n";
+    if(r <= 0){
+        perror("Error with pread");
+        return -1;
+    }
+
     for(int i = 0; i < ITEMS_PER_BUCKET; i++){
         DataItem* d = &b.data[i];
+        count++;
         if(d->valid == 0) {
             d->data = dataItem.data;
             d->key = dataItem.key;
@@ -188,26 +217,25 @@ int ExtendibleHashing :: insert(const DataItem& dataItem){
                 perror("Error with pwrite");
                 return -1;
             }
-            return 0;
+            cout << "Data Item with key " << dataItem.key << " inserted....\n";
+            return count;
         }    
     }
-    // cout <<"Here3\n";
     // if reached here, means there's no space in the bucket, so we need to split this bucket.
     
     // if the local depth of the bucket == global depth so we need to double the directory size first.
     if(b.localDepth == globalDepth) {
         doubleDirectory();
-        globalDepth = getGlobalDepth();
-        mask = pow(2, globalDepth) - 1;
-        dir = h & mask;
     }
 
     // split the bucket and insert the item in the new expanded db
-    splitBucket(dir, b);
-    insert(dataItem);
+    splitBucket(h, b);
+    count += insert(dataItem);
+    
+    return count;
 }
 
-void ExtendibleHashing::printDB() {
+int ExtendibleHashing::printDB() {
     int globalDepth = getGlobalDepth();
     cout << "Printing the Database.....\nGlobal Depth = " << globalDepth << endl;
 
@@ -215,12 +243,25 @@ void ExtendibleHashing::printDB() {
     Bucket b;
     for(int i=0; i<pow(2,globalDepth); i++){
         ssize_t r = pread(this->directory_fd, &bucketAddr, sizeof(int), i*sizeof(int));
+        if(r <= 0){
+            perror("Error with pread");
+            return -1;
+        }
         r = pread(fd, &b, sizeof(Bucket), bucketAddr);
-        cout << "Directory " << i << ": " << bucketAddr << "\nLocal Depth = " << b.localDepth << endl;
+        if(r <= 0){
+            perror("Error with pread");
+            return -1;
+        }
+        cout << "Directory " << i << ": Offset = " << bucketAddr << "\nLocal Depth = " << b.localDepth << endl;
         for(int j=0; j<ITEMS_PER_BUCKET; j++){
             if(b.data[j].valid==1) {
-                cout << "Slot " << j << ", key = " << b.data[j].key << ", value = " << b.data[j].data << endl;
+                cout << "Slot " << j << ": key = " << b.data[j].key << ", value = " << b.data[j].data << endl;
+            }
+            else {
+                cout << "Slot " << j << ": Empty......\n";
             }
         }
+        cout << "--------\n";
     }
+    return 0;
 }

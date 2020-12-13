@@ -19,11 +19,9 @@ class ExtendibleHashing{
         return idx*sizeof(Bucket);
     }
     void deleteOffset(int offset);
-    int putIfBucketNotFull(const DataItem& dataItem, int offset);
-    void splitBucket(int, Bucket);
+    int splitBucket(int, Bucket);
     int createNewBucket();
     int doubleDirectory();
-    void collisionDetected();
     
     int hashFn(int);
     int getGlobalDepth();
@@ -34,6 +32,6 @@ class ExtendibleHashing{
 
     ExtendibleHashing(int fd, int intdirectory_fd);
     int insert(const DataItem& dataItem);
-    void printDB();
+    int printDB();
     
 };
