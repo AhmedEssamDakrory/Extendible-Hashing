@@ -207,6 +207,40 @@ int ExtendibleHashing :: insert(const DataItem& dataItem){
     insert(dataItem);
 }
 
+bool ExtendibleHashing::search(const DataItem& dataItem){
+	bool result = false;
+	int globalDepth = getGlobalDepth();
+
+	int h = hashFn(dataItem.key);
+	int mask = pow(2, globalDepth) - 1;
+	int dir = h & mask;
+	int bucketAddr;
+	ssize_t r = pread(this->directory_fd, &bucketAddr, sizeof(int), dir);
+	Bucket b;
+	r = pread(this->fd, &b, sizeof(Bucket), bucketAddr);
+	for(int i = 0; i < ITEMS_PER_BUCKET; i++){
+	     DataItem* d = &b.data[i];
+	     if(d->valid == 1 && d->data == dataItem.data) {
+	         result = true;
+	         break;
+	     }
+	 }
+
+	return result;
+}
+
+bool ExtendibleHashing::deleteItem(const DataItem& dataItem){
+	bool result = false;
+
+	bool itemExist = search(dataItem);
+	if(itemExist){
+
+	}
+
+
+	return result;
+}
+
 void ExtendibleHashing::printDB() {
     int globalDepth = getGlobalDepth();
     cout << "Printing the Database.....\nGlobal Depth = " << globalDepth << endl;
