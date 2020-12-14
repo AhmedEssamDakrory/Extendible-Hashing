@@ -1,5 +1,6 @@
 #include "ExtendibleHashing.h"
 #include <iostream>
+#include<set>
 using namespace std;
 
 ExtendibleHashing :: ExtendibleHashing(int fd, int directory_fd){
@@ -255,6 +256,24 @@ Bucket ExtendibleHashing :: merge(const Bucket& b1, const Bucket& b2){
     return b;
 }
 
+void ExtendibleHashing :: halveDiectorySize(){
+    set<int> s1, s2;
+    int directorySize = File::getFileSize(this->directory_fd);
+    for(int offset = 0 ; offset < directorySize; offset+=sizeof(int)){
+        int address;
+        ssize_t result = pread(this->fd, &address, sizeof(int), offset);
+        if(s2.find(address) != s2.end()) continue;
+        if(s1.find(address) != s1.end()){
+            s1.erase(address);
+            s2.insert(address);
+        } else {
+            s1.insert(address);
+        }
+    }
+    if((int) s1.size() == 0) return;
+    File::changeSize(this->directory_fd, directorySize/2);
+}
+
 void ExtendibleHashing :: shrinkAndCompineAdresses(int bucketAddr, int siblingBucketAddr){
     int fileSize = File::getFileSize(this->fd);
     int directorySize = File::getFileSize(this->directory_fd);
@@ -275,6 +294,8 @@ void ExtendibleHashing :: shrinkAndCompineAdresses(int bucketAddr, int siblingBu
         }
     }
 }
+
+
 
 bool ExtendibleHashing::deleteItem(const DataItem& dataItem){
     int globalDepth = this->getGlobalDepth();
@@ -299,12 +320,13 @@ bool ExtendibleHashing::deleteItem(const DataItem& dataItem){
         result = pread(this->fd, &siblingBucket, sizeof(Bucket), siblingBucketAddr);
         if((siblingBucket.localDepth != b.localDepth) || !this->canMerge(b, siblingBucket)) break;
         Bucket newBucket = this->merge(b, siblingBucket);
-        if(bucketAddr > siblingBucketAddr ) swap(bucketAddr, siblingBucketAddr);
+        if(bucketAddr > siblingBucketAddr ) swap(bucketAddr, siblingBucketAddr), dir = siblingBucketAddr;
         result = pwrite(this->fd, &newBucket, sizeof(Bucket), bucketAddr);
         // shrink ......
         this->shrinkAndCompineAdresses(bucketAddr, siblingBucketAddr);
         b = newBucket;
     } while(1);
+    // If no local depth equals the global depth subtract 1 from the global depth and halve the size of the directory. 
     return true;
 }
 

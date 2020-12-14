@@ -27,6 +27,7 @@ class ExtendibleHashing{
     bool canMerge(const Bucket& b1, const Bucket& b2);
     Bucket merge(const Bucket& b1, const Bucket& b2);
     void shrinkAndCompineAdresses(int BucketAddr, int siblingBucketAddr);
+    void halveDiectorySize();
     int hashFn(int);
     int getGlobalDepth();
 
