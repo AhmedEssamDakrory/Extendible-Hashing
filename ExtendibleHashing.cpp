@@ -255,7 +255,7 @@ int ExtendibleHashing::search(const DataItem& dataItem){
 	r = pread(this->fd, &b, sizeof(Bucket), bucketAddr);
 	for(int i = 0; i < ITEMS_PER_BUCKET; i++){
 	     DataItem* d = &b.data[i];
-	     if(d->valid == 1 && d->data == dataItem.data) {
+	     if(d->valid == 1 && d->data == dataItem.data && d->key == dataItem.key) {
 	         offset = bucketAddr+i*sizeof(DataItem);
 	         break;
 	     }
