@@ -1,6 +1,6 @@
 #include "ExtendibleHashing.h"
 #include <iostream>
-#include<set>
+#include<map>
 using namespace std;
 
 ExtendibleHashing :: ExtendibleHashing(int fd, int directory_fd){
@@ -286,21 +286,21 @@ Bucket ExtendibleHashing :: merge(const Bucket& b1, const Bucket& b2){
 }
 
 void ExtendibleHashing :: halveDiectorySize(){
-    set<int> s1, s2;
+    map<int, int> mp;
     int directorySize = File::getFileSize(this->directory_fd);
     for(int offset = 0 ; offset < directorySize; offset+=sizeof(int)){
         int address;
-        ssize_t result = pread(this->fd, &address, sizeof(int), offset);
-        if(s2.find(address) != s2.end()) continue;
-        if(s1.find(address) != s1.end()){
-            s1.erase(address);
-            s2.insert(address);
-        } else {
-            s1.insert(address);
+        ssize_t result = pread(this->directory_fd, &address, sizeof(int), offset);
+        mp[address]++;
+    }
+    bool ok = true;
+    for(auto p : mp){
+        if(p.second == 1){
+            ok = false;
+            break;
         }
     }
-    if((int) s1.size() == 0) return;
-    File::changeSize(this->directory_fd, directorySize/2);
+    if(ok) File::changeSize(this->directory_fd, directorySize/2);
 }
 
 void ExtendibleHashing :: shrinkAndCompineAdresses(int bucketAddr, int siblingBucketAddr){
@@ -362,7 +362,7 @@ bool ExtendibleHashing::deleteItem(const DataItem& dataItem){
 
 void ExtendibleHashing::printDB() {
     int globalDepth = getGlobalDepth();
-    cout << "Printing the Database.....\nGlobal Depth = " << globalDepth << endl;
+    cout << "//////////////////Printing the Database.....///////////////////\nGlobal Depth = " << globalDepth << endl;
 
     int bucketAddr = 0;
     Bucket b;
