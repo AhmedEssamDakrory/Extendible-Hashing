@@ -256,6 +256,7 @@ int ExtendibleHashing::search(int key){
 	for(int i = 0; i < ITEMS_PER_BUCKET; i++){
 	     DataItem* d = &b.data[i];
 	     if(d->valid == 1 && d->key == key) {
+
 	         offset = bucketAddr+i*sizeof(DataItem);
 	         break;
 	     }
