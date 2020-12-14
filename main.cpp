@@ -45,6 +45,9 @@ int main(){
     if(r <= 0) return -1;
     eh.printDB();
 
+    eh.deleteItem(dataItem);
+    eh.printDB();
+
     return 0;
 }
 
