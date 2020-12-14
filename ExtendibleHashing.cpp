@@ -242,11 +242,11 @@ int ExtendibleHashing :: insert(const DataItem& dataItem){
     return count;
 }
 
-int ExtendibleHashing::search(const DataItem& dataItem){
+int ExtendibleHashing::search(int key){
 	int offset = -1;
 	int globalDepth = getGlobalDepth();
 
-	int h = hashFn(dataItem.key);
+	int h = hashFn(key);
 	int mask = pow(2, globalDepth) - 1;
 	int dir = h & mask;
 	int bucketAddr;
@@ -255,7 +255,7 @@ int ExtendibleHashing::search(const DataItem& dataItem){
 	r = pread(this->fd, &b, sizeof(Bucket), bucketAddr);
 	for(int i = 0; i < ITEMS_PER_BUCKET; i++){
 	     DataItem* d = &b.data[i];
-	     if(d->valid == 1 && d->data == dataItem.data) {
+	     if(d->valid == 1 && d->key == key) {
 	         offset = bucketAddr+i*sizeof(DataItem);
 	         break;
 	     }
@@ -326,14 +326,14 @@ void ExtendibleHashing :: shrinkAndCompineAdresses(int bucketAddr, int siblingBu
 
 
 
-bool ExtendibleHashing::deleteItem(const DataItem& dataItem){
+bool ExtendibleHashing::deleteItem(int key){
     int globalDepth = this->getGlobalDepth();
-    int offset = this->search(dataItem);
+    int offset = this->search(key);
     if(offset < 0) return false; // Key not found
     // Delete offset.
     bool f = this->deleteOffset(offset);
     if(!f) return false; // Error while writing!
-    int h = hashFn(dataItem.key);
+    int h = hashFn(key);
     int mask = (1 << globalDepth) - 1;
     int dir = h & mask;
     int bucketAddr;
@@ -353,16 +353,16 @@ bool ExtendibleHashing::deleteItem(const DataItem& dataItem){
         result = pwrite(this->fd, &newBucket, sizeof(Bucket), bucketAddr);
         // shrink ......
         this->shrinkAndCompineAdresses(bucketAddr, siblingBucketAddr);
+        // If no local depth equals the global depth subtract 1 from the global depth and halve the size of the directory. 
+        this->halveDiectorySize();
         b = newBucket;
-    } while(1);
-    // If no local depth equals the global depth subtract 1 from the global depth and halve the size of the directory. 
-    this->halveDiectorySize();
+    } while(1); 
     return true;
 }
 
 void ExtendibleHashing::printDB() {
     int globalDepth = getGlobalDepth();
-    cout << "//////////////////Printing the Database.....///////////////////\nGlobal Depth = " << globalDepth << endl;
+    cout << "//////////////////.....Printing the Database.....///////////////////\nGlobal Depth = " << globalDepth << endl;
 
     int bucketAddr = 0;
     Bucket b;

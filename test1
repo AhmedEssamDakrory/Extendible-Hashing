@@ -1,0 +1,15 @@
+13
+insert 7 1
+insert 9 2
+insert 12 3
+insert 4 4
+insert 10 5
+insert 5 6
+insert 1 7
+delete 1
+delete 12
+delete 10
+delete 7
+delete 9
+delete 5
+

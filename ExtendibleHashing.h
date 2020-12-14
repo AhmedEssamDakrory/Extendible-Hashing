@@ -37,8 +37,8 @@ class ExtendibleHashing{
 
     ExtendibleHashing(int fd, int intdirectory_fd);
     int insert(const DataItem& dataItem);
-    int search(const DataItem& dataItem);
-    bool deleteItem(const DataItem& dataItem);
+    int search(int key);
+    bool deleteItem(int key);
     void printDB();
     
 };
