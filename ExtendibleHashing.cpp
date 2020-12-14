@@ -356,6 +356,7 @@ bool ExtendibleHashing::deleteItem(const DataItem& dataItem){
         b = newBucket;
     } while(1);
     // If no local depth equals the global depth subtract 1 from the global depth and halve the size of the directory. 
+    this->halveDiectorySize();
     return true;
 }
 
